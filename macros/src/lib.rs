@@ -54,6 +54,7 @@ use proc_macro::TokenStream;
 /// - `category`: Category of this command which affects placement in the help command
 /// - `custom_data`: Arbitrary expression that will be boxed and stored in `Command::custom_data`
 /// - `identifying_name`: Optionally, a unique identifier for this command for your personal usage
+/// - `crate`: Path to poise, for crates that re-export it `crate = "my_crate::poise"` (default: `::poise`)
 /// - `install_context`: Installation contexts where this command is available (slash-only)
 /// - `interaction_context`: Interaction contexts where this command is available (slash-only)
 ///
@@ -287,6 +288,10 @@ pub fn command(args: TokenStream, function: TokenStream) -> TokenStream {
 /// - `~yourcommand ChoiceB`
 /// - `~yourcommand cHoIcEb` - names are case-insensitive
 ///
+///
+/// # Re-exported poise
+///
+/// If poise is re-exported by another crate, add `#[poise(crate = "my_crate::poise")]` to the enum
 /// # Localization
 ///
 /// In slash commands, you can take advantage of Discord's localization.
@@ -310,7 +315,7 @@ pub fn command(args: TokenStream, function: TokenStream) -> TokenStream {
 /// When invoking your slash command, users will be shown the name matching their locale.
 ///
 /// You can also set localized choice names programmatically; see `CommandParameter::choices`
-#[proc_macro_derive(ChoiceParameter, attributes(name, name_localized))]
+#[proc_macro_derive(ChoiceParameter, attributes(name, name_localized, poise))]
 pub fn choice_parameter(input: TokenStream) -> TokenStream {
     let enum_ = syn::parse_macro_input!(input as syn::DeriveInput);
 
@@ -698,6 +703,7 @@ pub fn slash_choice_parameter(input: TokenStream) -> TokenStream {
         checkbox,
         min_values,
         max_values,
+        poise,
     )
 )]
 pub fn modal(input: TokenStream) -> TokenStream {

@@ -51,9 +51,13 @@ async fn strip_prefix<'a, U: Send + Sync + 'static, E>(
         return Some(prefix_len_to_u16(prefix));
     }
 
-    if let Some(prefix) = framework.options.prefix_options.additional_prefixes.iter().find_map(
-        |prefix| match prefix {
-            &crate::Prefix::Literal(prefix) => Some(prefix),
+    if let Some(prefix) = framework
+        .options
+        .prefix_options
+        .additional_prefixes
+        .iter()
+        .find_map(|prefix| match prefix {
+            &crate::Prefix::Literal(prefix) => msg.content.starts_with(prefix).then_some(prefix),
             crate::Prefix::Regex(prefix) => {
                 let regex_match = prefix.find(&msg.content)?;
                 if regex_match.start() == 0 {

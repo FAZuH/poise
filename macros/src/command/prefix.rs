@@ -38,7 +38,8 @@ fn get_modifier(param: &CommandParameter) -> Result<Option<Modifier>, syn::Error
 }
 
 fn parse_prefix_params(
-    params: &[PrefixParameter<'_>],
+    params: &[PrefixParameter],
+    krate: &syn::Path,
 ) -> Result<(proc_macro2::TokenStream, Vec<syn::Type>), syn::Error> {
     let Some((first, rest)) = params.split_first() else {
         // If the input is exhausted, we output success.
@@ -55,14 +56,14 @@ fn parse_prefix_params(
 
     // Recursively parse the parameters after this one, and wrap the generated code in a function to
     // prevent duplicated copy-pasting.
-    let (parsed_rest, mut parsed_types) = parse_prefix_params(rest)?;
+    let (parsed_rest, mut parsed_types) = parse_prefix_params(rest, krate)?;
     let parser_name = format_ident!("parser_{}", first.idx);
     let parser_def = quote::quote! {
         async fn #parser_name (
             args: &str,
             attachment_idx: usize,
-            serenity_ctx: &::poise::serenity_prelude::Context,
-            msg: &::poise::serenity_prelude::Message,
+            serenity_ctx: &#krate::serenity_prelude::Context,
+            msg: &#krate::serenity_prelude::Message,
         ) -> Result<( #( #parsed_types, )* ), ParseError> {
             #parsed_rest
         }
@@ -86,7 +87,7 @@ fn parse_prefix_params(
                         Ok(( #( #parsed_tokens, )* )) => Ok((None, #( #parsed_tokens, )* )),
                         Err(_) => {
                             let ((args, attachment_idx, #token)) =
-                                <#ty as ::poise::PopArgument>::pop_from(
+                                <#ty as #krate::PopArgument>::pop_from(
                                     args,
                                     attachment_idx,
                                     serenity_ctx,
@@ -101,10 +102,43 @@ fn parse_prefix_params(
                          }
                      }
                 }
+            } else if let Some(ty) = unwrap_generic(ty, "Vec") {
+                // Parse `#[lazy] Vec<T>` by trying to parse the shortest `Vec<T>` possible,
+                // including an empty `Vec`.
+                quote::quote! {
+                    #parser_def
+
+                    let mut #token = Vec::new();
+                    let mut args = args;
+                    let mut attachment_idx = attachment_idx;
+
+                    let mut error = None;
+                    loop {
+                        match #parser_name(args, attachment_idx, serenity_ctx, msg).await {
+                            Ok(( #( #parsed_tokens, )* )) => return Ok((#token, #( #parsed_tokens, )* )),
+                            Err(e) => error = Some(e),
+                        }
+
+                        match <#ty as #krate::PopArgument>::pop_from(
+                            args,
+                            attachment_idx,
+                            serenity_ctx,
+                            msg,
+                        ).await {
+                            Ok((new_args, new_attachment_idx, token)) => {
+                                #token.push(token);
+                                args = new_args;
+                                attachment_idx = new_attachment_idx;
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                    Err(error.unwrap_or_default())
+                }
             } else {
                 return Err(syn::Error::new(
                     ty.span(),
-                    "can only decorate `Option<T>` with #[lazy]",
+                    "can only decorate `Option<T>` or `Vec<T>` with #[lazy]",
                 ));
             }
         },
@@ -115,7 +149,7 @@ fn parse_prefix_params(
                 (
                     ty,
                     quote::quote! { Ok((#token,)) },
-                    quote::quote! { Err((Some(::poise::TooFewArguments::default().into()), None)) },
+                    quote::quote! { Err((Some(#krate::TooFewArguments::default().into()), None)) },
                 )
             };
 
@@ -127,7 +161,7 @@ fn parse_prefix_params(
                     #empty
                 } else {
                     let #token =
-                        <#ty as ::poise::ArgumentConvert>::convert(
+                        <#ty as #krate::ArgumentConvert>::convert(
                             serenity_ctx,
                             msg.guild_id,
                             Some(msg.channel_id),
@@ -150,7 +184,7 @@ fn parse_prefix_params(
                 let mut args = args;
                 let mut attachment_idx = attachment_idx;
                 let mut error = (None, None);
-                let #token = match <String as ::poise::PopArgument>::pop_from(
+                let #token = match <String as #krate::PopArgument>::pop_from(
                     args,
                     attachment_idx,
                     serenity_ctx,
@@ -196,7 +230,7 @@ fn parse_prefix_params(
 
                     let mut error = (None, None);
                     if let Ok((args, attachment_idx, #token)) =
-                        <String as ::poise::PopArgument>::pop_from(
+                        <String as #krate::PopArgument>::pop_from(
                             args,
                             attachment_idx,
                             serenity_ctx,
@@ -237,7 +271,7 @@ fn parse_prefix_params(
                     #parser_def
 
                     let (args, attachment_idx, #token) =
-                        <String as ::poise::PopArgument>::pop_from(
+                        <String as #krate::PopArgument>::pop_from(
                             args,
                             attachment_idx,
                             serenity_ctx,
@@ -264,7 +298,7 @@ fn parse_prefix_params(
                     #parser_def
 
                     if let Ok((args, attachment_idx, #token)) =
-                        <#ty as ::poise::PopArgument>::pop_from(
+                        <#ty as #krate::PopArgument>::pop_from(
                             args,
                             attachment_idx,
                             serenity_ctx,
@@ -301,7 +335,7 @@ fn parse_prefix_params(
                     // spare arguments would cause the error from the spare arguments to be the
                     // parse error for Vec<T>, which is confusing
                     while let Ok((new_args, new_attachment_idx, token)) =
-                        <#ty as ::poise::PopArgument>::pop_from(
+                        <#ty as #krate::PopArgument>::pop_from(
                             args,
                             attachment_idx,
                             serenity_ctx,
@@ -330,7 +364,7 @@ fn parse_prefix_params(
                     #parser_def
 
                     let (args, attachment_idx, #token) =
-                        <#ty as ::poise::PopArgument>::pop_from(
+                        <#ty as #krate::PopArgument>::pop_from(
                             args,
                             attachment_idx,
                             serenity_ctx,
@@ -352,8 +386,10 @@ fn parse_prefix_params(
 }
 
 pub fn generate_prefix_action(inv: &Invocation) -> Result<proc_macro2::TokenStream, syn::Error> {
-    let param_idents =
-        (0..inv.parameters.len()).map(|i| format_ident!("poise_param_{i}")).collect::<Vec<_>>();
+    let krate = &inv.krate;
+    let param_idents = (0..inv.parameters.len())
+        .map(|i| format_ident!("poise_param_{i}"))
+        .collect::<Vec<_>>();
 
     let mut params = inv
         .parameters
@@ -393,7 +429,7 @@ pub fn generate_prefix_action(inv: &Invocation) -> Result<proc_macro2::TokenStre
         });
     }
 
-    let (parsed_params, _) = parse_prefix_params(&params)?;
+    let (parsed_params, _) = parse_prefix_params(&params, krate)?;
 
     Ok(quote::quote! {
         |ctx| Box::pin(async move {
@@ -406,10 +442,10 @@ pub fn generate_prefix_action(inv: &Invocation) -> Result<proc_macro2::TokenStre
                 let attachment_idx = 0;
 
                 #parsed_params
-            }.await.map_err(|(error, input)| poise::FrameworkError::new_argument_parse(
+            }.await.map_err(|(error, input)| #krate::FrameworkError::new_argument_parse(
                 ctx.into(),
                 input,
-                error.unwrap_or_else(|| ::poise::TooManyArguments::default().into()),
+                error.unwrap_or_else(|| #krate::TooManyArguments::default().into()),
             ))?;
 
             let is_framework_cooldown = !ctx.command().manual_cooldowns
@@ -421,7 +457,7 @@ pub fn generate_prefix_action(inv: &Invocation) -> Result<proc_macro2::TokenStre
 
             inner(ctx.into(), #( #param_idents, )* )
                 .await
-                .map_err(|error| poise::FrameworkError::new_command(
+                .map_err(|error| #krate::FrameworkError::new_command(
                     ctx.into(),
                     error,
                 ))

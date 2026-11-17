@@ -25,6 +25,8 @@ fn lit_to_string(lit: &syn::Lit) -> Result<String, syn::Error> {
 }
 
 pub fn generate_parameters(inv: &Invocation) -> Result<Vec<proc_macro2::TokenStream>, syn::Error> {
+    let krate = &inv.krate;
+
     let mut parameter_structs = Vec::new();
     for param in &inv.parameters {
         // no #[description] check here even if slash_command set, so users can programatically
@@ -51,7 +53,7 @@ pub fn generate_parameters(inv: &Invocation) -> Result<Vec<proc_macro2::TokenStr
 
         let autocomplete_callback = if let Some(autocomplete_fn) = &param.args.autocomplete {
             quote::quote! { Some(|
-                ctx: poise::ApplicationContext<'_, _, _>,
+                ctx: #krate::ApplicationContext<'_, _, _>,
                 partial: &str,
             | Box::pin(#autocomplete_fn(ctx.into(), partial))) }
         } else {
@@ -79,12 +81,12 @@ pub fn generate_parameters(inv: &Invocation) -> Result<Vec<proc_macro2::TokenStr
         };
         let type_setter = if inv.args.slash_command {
             if let Some(_choices) = &param.args.choices {
-                quote::quote! { Some(|o| o.kind(::poise::serenity_prelude::CommandOptionType::Integer)) }
+                quote::quote! { Some(|o| o.kind(#krate::serenity_prelude::CommandOptionType::Integer)) }
             } else if param.args.string {
-                quote::quote! { Some(|o| o.kind(::poise::serenity_prelude::CommandOptionType::String)) }
+                quote::quote! { Some(|o| o.kind(#krate::serenity_prelude::CommandOptionType::String)) }
             } else {
                 quote::quote! { Some(|o| {
-                    <#type_ as ::poise::SlashArgument>::create(o)
+                    <#type_ as #krate::SlashArgument>::create(o)
                     #min_value_setter #max_value_setter
                     #min_length_setter #max_length_setter
                 }) }
@@ -99,7 +101,7 @@ pub fn generate_parameters(inv: &Invocation) -> Result<Vec<proc_macro2::TokenStr
                 let choices_iter = choices.0.iter();
                 let choices: Vec<_> = choices_iter.map(lit_to_string).collect::<Result<_, _>>()?;
 
-                quote::quote! { Cow::Borrowed(&[#( ::poise::CommandParameterChoice {
+                quote::quote! { Cow::Borrowed(&[#( #krate::CommandParameterChoice {
                     name: Cow::Borrowed(#choices),
                     localizations: Cow::Borrowed(&[]),
                     __non_exhaustive: (),
@@ -107,7 +109,7 @@ pub fn generate_parameters(inv: &Invocation) -> Result<Vec<proc_macro2::TokenStr
             } else if param.args.string {
                 quote::quote! { Cow::Borrowed(&[]) }
             } else {
-                quote::quote! { <#type_ as ::poise::SlashArgument>::choices() }
+                quote::quote! { <#type_ as #krate::SlashArgument>::choices() }
             }
         } else {
             quote::quote! { Cow::Borrowed(&[]) }
@@ -116,7 +118,7 @@ pub fn generate_parameters(inv: &Invocation) -> Result<Vec<proc_macro2::TokenStr
         let channel_types =
             if let Some(crate::util::List(channel_types)) = &param.args.channel_types {
                 quote::quote! { Some(
-                    Cow::Borrowed(&[ #( poise::serenity_prelude::ChannelType::#channel_types ),* ])
+                    Cow::Borrowed(&[ #( #krate::serenity_prelude::ChannelType::#channel_types ),* ])
                 ) }
             } else {
                 quote::quote! { None }
@@ -132,7 +134,7 @@ pub fn generate_parameters(inv: &Invocation) -> Result<Vec<proc_macro2::TokenStr
 
         parameter_structs.push((
             quote::quote! {
-                ::poise::CommandParameter {
+                #krate::CommandParameter {
                     name: ::std::borrow::Cow::Borrowed(#param_name),
                     name_localizations: #name_localizations,
                     description: #description,
@@ -155,6 +157,8 @@ pub fn generate_parameters(inv: &Invocation) -> Result<Vec<proc_macro2::TokenStr
 }
 
 pub fn generate_slash_action(inv: &Invocation) -> Result<proc_macro2::TokenStream, syn::Error> {
+    let krate = &inv.krate;
+
     if let Some(desc) = &inv.description {
         let length = desc.chars().count();
         if length > 100 {
@@ -168,7 +172,11 @@ pub fn generate_slash_action(inv: &Invocation) -> Result<proc_macro2::TokenStrea
     let param_identifiers =
         (0..inv.parameters.len()).map(|i| format_ident!("poise_param_{i}")).collect::<Vec<_>>();
 
-    let params = inv.parameters.iter().map(parse_slash_param).collect::<Vec<_>>();
+    let params = inv
+        .parameters
+        .iter()
+        .map(|p| parse_slash_param(p, krate))
+        .collect::<Vec<_>>();
 
     Ok(quote::quote! {
         |ctx| Box::pin(async move {
@@ -177,7 +185,7 @@ pub fn generate_slash_action(inv: &Invocation) -> Result<proc_macro2::TokenStrea
                 let interaction = ctx.interaction;
                 let args = ctx.args;
 
-                Ok::<_, ::poise::SlashArgError>((#( #params, )*))
+                Ok::<_, #krate::SlashArgError>((#( #params, )*))
             }
             .await
             .map_err(|error| error.to_framework_error(ctx))?;
@@ -191,7 +199,7 @@ pub fn generate_slash_action(inv: &Invocation) -> Result<proc_macro2::TokenStrea
 
             inner(ctx.into(), #( #param_identifiers, )*)
                 .await
-                .map_err(|error| poise::FrameworkError::new_command(
+                .map_err(|error| #krate::FrameworkError::new_command(
                     ctx.into(),
                     error,
                 ))
@@ -199,10 +207,13 @@ pub fn generate_slash_action(inv: &Invocation) -> Result<proc_macro2::TokenStrea
     })
 }
 
-fn parse_slash_param(param: &CommandParameter) -> proc_macro2::TokenStream {
-    fn extract_slash_argument(ty: impl quote::ToTokens) -> proc_macro2::TokenStream {
+fn parse_slash_param(param: &CommandParameter, krate: &syn::Path) -> proc_macro2::TokenStream {
+    fn extract_slash_argument(
+        ty: impl quote::ToTokens,
+        krate: &syn::Path,
+    ) -> proc_macro2::TokenStream {
         quote::quote! {
-            <#ty as ::poise::SlashArgument>::extract(
+            <#ty as #krate::SlashArgument>::extract(
                 serenity_ctx,
                 interaction,
                 &arg.value
@@ -222,7 +233,7 @@ fn parse_slash_param(param: &CommandParameter) -> proc_macro2::TokenStream {
 
     if param.args.flag {
         // Extract #[flag]
-        let extract = extract_slash_argument(quote::quote! { bool });
+        let extract = extract_slash_argument(quote::quote! { bool }, krate);
         return quote::quote! {
             match args.iter().find(|arg| arg.name == #name) {
                 Some(arg) => #extract,
@@ -245,31 +256,31 @@ fn parse_slash_param(param: &CommandParameter) -> proc_macro2::TokenStream {
         let choice_vals = &choices.0;
 
         quote::quote! {{
-            let ::poise::serenity_prelude::ResolvedValue::Integer(index) = arg.value else {
-                return Err(::poise::SlashArgError::new_command_structure_mismatch(
+            let #krate::serenity_prelude::ResolvedValue::Integer(index) = arg.value else {
+                return Err(#krate::SlashArgError::new_command_structure_mismatch(
                     "expected integer, as the index for an inline choice parameter")
                 );
             };
             match index {
                 #( #choice_indices => #choice_vals, )*
                 _ => {
-                    return Err(::poise::SlashArgError::new_command_structure_mismatch(
+                    return Err(#krate::SlashArgError::new_command_structure_mismatch(
                         "out of range index for inline choice parameter"
                     ));
                 }
             }
         }}
     } else if param.args.string {
-        let extract = extract_slash_argument(quote::quote!(String));
+        let extract = extract_slash_argument(quote::quote!(String), krate);
 
         quote::quote! {{
             let input = #extract;
             <#ty as ::std::str::FromStr>::from_str(&input)
-                .map_err(|e| ::poise::SlashArgError::new_parse(e.into(), input))?
+                .map_err(|e| #krate::SlashArgError::new_parse(e.into(), input))?
         }}
     } else {
         // Extract T
-        extract_slash_argument(ty)
+        extract_slash_argument(ty, krate)
     };
 
     match wrapper {
@@ -277,7 +288,7 @@ fn parse_slash_param(param: &CommandParameter) -> proc_macro2::TokenStream {
             match args.iter().find(|arg| arg.name == #name) {
                 Some(arg) => #extract,
                 None => {
-                    return Err(::poise::SlashArgError::new_command_structure_mismatch(
+                    return Err(#krate::SlashArgError::new_command_structure_mismatch(
                         "a required argument is missing"
                     ));
                 }
@@ -302,6 +313,8 @@ fn parse_slash_param(param: &CommandParameter) -> proc_macro2::TokenStream {
 pub fn generate_context_menu_action(
     inv: &Invocation,
 ) -> Result<proc_macro2::TokenStream, syn::Error> {
+    let krate = &inv.krate;
+
     let param_type = match &*inv.parameters {
         [single_param] => &single_param.type_,
         _ => {
@@ -313,7 +326,7 @@ pub fn generate_context_menu_action(
     };
 
     Ok(quote::quote! {
-        <#param_type as ::poise::ContextMenuParameter<_, _>>::to_action(|ctx, value| {
+        <#param_type as #krate::ContextMenuParameter<_, _>>::to_action(|ctx, value| {
             Box::pin(async move {
                 let is_framework_cooldown = !ctx.command().manual_cooldowns
                     .unwrap_or_else(|| ctx.framework.options.manual_cooldowns);
@@ -324,7 +337,7 @@ pub fn generate_context_menu_action(
 
                 inner(ctx.into(), value)
                     .await
-                    .map_err(|error| poise::FrameworkError::new_command(
+                    .map_err(|error| #krate::FrameworkError::new_command(
                         ctx.into(),
                         error,
                     ))
