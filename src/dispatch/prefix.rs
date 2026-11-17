@@ -244,7 +244,7 @@ pub async fn parse_invocation<'a, U: Send + Sync + 'static, E>(
     let msg_content = msg.content[content_start.into()..].trim_start();
 
     let (invoked_command_name, args) = find_command(
-        &framework.options.commands,
+        framework.commands,
         msg_content,
         framework.options.prefix_options.case_insensitive_commands,
         command_tree,

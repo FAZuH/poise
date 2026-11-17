@@ -29,6 +29,7 @@ impl serenity::EventHandler for Handler {
                 let framework_data = poise::FrameworkContext {
                     serenity_context,
                     options: &self.options,
+                    commands: &self.options.commands,
                 };
 
                 let invocation_data = tokio::sync::Mutex::new(Box::new(()) as _);

@@ -3,6 +3,8 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use arc_swap::ArcSwap;
+
 pub use builder::*;
 
 use crate::serenity_prelude::{self as serenity, TeamMemberRole};
@@ -24,6 +26,8 @@ pub struct Framework<U, E> {
     bot_id: std::sync::OnceLock<serenity::UserId>,
     /// Stores the framework options
     options: crate::FrameworkOptions<U, E>,
+    /// Snapshot of commands, swappable at runtime
+    commands: ArcSwap<Vec<crate::Command<U, E>>>,
 
     /// Handle to the background task in order to `abort()` it on `Drop`
     edit_tracker_purge_task: Option<tokio::task::JoinHandle<()>>,
@@ -47,14 +51,17 @@ impl<U, E> Framework<U, E> {
 
     /// Setup a new [`Framework`].
     #[must_use]
-    pub fn new(options: crate::FrameworkOptions<U, E>) -> Self
+    pub fn new(mut options: crate::FrameworkOptions<U, E>) -> Self
     where
         U: Send + Sync + 'static + 'static,
         E: Send + 'static,
     {
+        let mut commands = std::mem::take(&mut options.commands);
+        set_qualified_names(&mut commands);
         Self {
             bot_id: std::sync::OnceLock::new(),
             edit_tracker_purge_task: None,
+            commands: ArcSwap::from_pointee(commands),
             options,
         }
     }
@@ -63,6 +70,16 @@ impl<U, E> Framework<U, E> {
     #[must_use]
     pub fn options(&self) -> &crate::FrameworkOptions<U, E> {
         &self.options
+    }
+
+    /// Replace the commands used for dispatch and return the previous snapshot.
+    #[must_use]
+    pub fn replace_commands(
+        &self,
+        mut commands: Vec<crate::Command<U, E>>,
+    ) -> Arc<Vec<crate::Command<U, E>>> {
+        set_qualified_names(&mut commands);
+        self.commands.swap(Arc::new(commands))
     }
 }
 
@@ -77,8 +94,6 @@ impl<U, E> Drop for Framework<U, E> {
 #[serenity::async_trait]
 impl<U: Send + Sync + 'static, E: Send + Sync> serenity::Framework for Framework<U, E> {
     async fn init(&mut self, client: &serenity::Client) {
-        set_qualified_names(&mut self.options.commands);
-
         message_content_intent_sanity_check(
             &self.options.prefix_options,
             client.shard_manager.intents(),
@@ -122,11 +137,13 @@ async fn raw_dispatch_event<U, E>(
 
     #[cfg(not(feature = "cache"))]
     let bot_id = *framework.bot_id.get().expect("bot ID not set even though we awaited Ready");
+    let commands = framework.commands.load_full();
     let framework = crate::FrameworkContext {
         #[cfg(not(feature = "cache"))]
         bot_id,
         serenity_context,
         options: &framework.options,
+        commands: &commands,
     };
     crate::dispatch_event(framework, event).await;
 }

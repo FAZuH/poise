@@ -20,6 +20,8 @@ pub struct FrameworkContext<'a, U, E> {
     pub bot_id: serenity::UserId,
     /// Framework configuration
     pub options: &'a crate::FrameworkOptions<U, E>,
+    /// Snapshot of commands, valid for the lifetime of this dispatch
+    pub commands: &'a [crate::Command<U, E>],
     // deliberately not non exhaustive because you need to create FrameworkContext from scratch
     // to run your own event loop
 }

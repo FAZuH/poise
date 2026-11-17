@@ -210,7 +210,7 @@ pub async fn autocomplete_command<'a, U: Send + Sync + 'static, E>(
     ctx: crate::Context<'a, U, E>,
     partial: &'a str,
 ) -> serenity::CreateAutocompleteResponse<'a> {
-    let commands = ctx.framework().options.commands.iter();
+    let commands = ctx.framework().commands.iter();
     let filtered_commands = commands.filter(|cmd| cmd.name.starts_with(partial)).take(25);
 
     let choices: Vec<_> = filtered_commands

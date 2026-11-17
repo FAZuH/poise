@@ -245,7 +245,7 @@
 //! As explained in [Introduction to slash commands](#introduction-to-slash-commands), slash
 //! commands need to be _registered_ to Discord. Poise provides several ways to do it, with varying
 //! degree of abstraction. (Note: you can access a list of framework commands from anywhere with
-//! [`ctx.framework().options.commands`](Context::framework)).
+//! [`ctx.framework().commands`](Context::framework)).
 //!
 //! The easiest way is with [`builtins::register_application_commands_buttons`].
 //! It spawns a message with buttons to register and unregister all commands, globally or in the current

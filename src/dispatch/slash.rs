@@ -68,7 +68,7 @@ fn extract_command<'a, U, E>(
         &interaction.data.name,
         interaction.data.kind,
         options,
-        &framework.options.commands,
+        framework.commands,
         command_tree,
     ) else {
         return Err(crate::FrameworkError::UnknownInteraction {

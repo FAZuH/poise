@@ -10,7 +10,7 @@ use crate::serenity_prelude::{self as serenity, CollectComponentInteractions};
 /// ```rust,no_run
 /// # use poise::serenity_prelude as serenity;
 /// # async fn foo(ctx: poise::Context<'_, (), ()>) -> Result<(), serenity::Error> {
-/// let commands = &ctx.framework().options().commands;
+/// let commands = ctx.framework().commands;
 /// let create_commands = poise::builtins::create_application_commands(commands);
 ///
 /// serenity::Command::set_global_commands(ctx.http(), &create_commands).await?;
@@ -96,7 +96,7 @@ pub async fn register_application_commands<U: Send + Sync + 'static, E>(
         return Ok(());
     }
 
-    let commands_builder = create_application_commands(&ctx.framework().options().commands);
+    let commands_builder = create_application_commands(ctx.framework().commands);
     let num_commands = commands_builder.len();
 
     if global {
@@ -147,7 +147,7 @@ pub async fn register_application_commands<U: Send + Sync + 'static, E>(
 pub async fn register_application_commands_buttons<U: Send + Sync + 'static, E>(
     ctx: crate::Context<'_, U, E>,
 ) -> Result<(), serenity::Error> {
-    let create_commands = create_application_commands(&ctx.framework().options().commands);
+    let create_commands = create_application_commands(ctx.framework().commands);
     let num_commands = create_commands.len();
 
     let is_bot_owner = ctx.framework().options().owners.contains(&ctx.author().id);
