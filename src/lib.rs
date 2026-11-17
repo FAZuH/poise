@@ -391,6 +391,7 @@ pub mod builtins;
 pub mod choice_parameter;
 pub mod cooldown;
 pub mod dispatch;
+pub mod ext;
 pub mod framework;
 pub mod modal;
 pub mod prefix_argument;
@@ -398,6 +399,7 @@ pub mod reply;
 pub mod slash_argument;
 pub mod structs;
 pub mod track_edits;
+pub mod view_support;
 pub mod macros {
     //! Procedural macros used in poise, like [`command`]
     #[doc(inline)]
@@ -419,6 +421,10 @@ pub use {
     structs::*,
     track_edits::*,
 };
+
+#[cfg(feature = "view-macros")]
+#[doc(no_inline)]
+pub use poise_view_macros::{component, view};
 
 /// See [`builtins`]
 #[deprecated = "`samples` module was renamed to `builtins`"]

@@ -8,6 +8,10 @@ description = "A Discord bot framework for serenity"
 license = "MIT"
 repository = "https://github.com/serenity-rs/poise/"
 
+[workspace]
+members = ["view_macros"]
+exclude = ["macros"]
+
 [dependencies]
 tokio = { version = "1.25.1", default-features = false } # for async in general
 futures-util = { version = "0.3.13", default-features = false } # for async in general
@@ -19,6 +23,10 @@ derive-where = "1.6.1"
 parking_lot = "0.12.1"
 trim-in-place = "0.2.0"
 arc-swap = "1.9.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+small-fixed-array = "0.4"
+poise_view_macros = { path = "view_macros", optional = true }
 
 [dependencies.serenity]
 default-features = false
@@ -39,6 +47,31 @@ tracing-subscriber = "0.3.18"
 fluent = "0.17.0"
 intl-memoizer = "0.5.1"
 fluent-syntax = "0.12"
+trybuild = "1"
+
+[[test]]
+name = "view_macros"
+required-features = ["view-macros"]
+
+[[test]]
+name = "view_splices"
+required-features = ["view-macros"]
+
+[[test]]
+name = "view_scaffold"
+required-features = ["view-macros"]
+
+[[test]]
+name = "trybuild"
+required-features = ["view-macros"]
+
+[[test]]
+name = "component_macros"
+required-features = ["view-macros"]
+
+[[test]]
+name = "hub_acceptance"
+required-features = ["view-macros"]
 
 [features]
 default = ["serenity/rustls_backend", "cache", "chrono", "handle_panics"]
@@ -51,6 +84,7 @@ collector = []
 # This feature exists because some users want to disable the mere possibility of catching panics at
 # build time for peace of mind.
 handle_panics = []
+view-macros = ["dep:poise_view_macros"]
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(doc_nightly)"] }
